@@ -10,81 +10,67 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
+import xgboost as xgb
 from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
 
-# --- Page config ---
-st.set_page_config(page_title="XGBoost House Price Predictor", layout="wide")
-
-# --- Title ---
-st.title("🏠 XGBoost House Price Prediction (Log Transformed)")
-
-# --- Load data ---
+# Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv("cleaned_Uk_Housing.csv")  # Replace with your dataset path
+    df = pd.read_csv("cleaned_Uk_Housing.csv")  # Make sure this file exists in your GitHub repo
+    if 'Log_Sale_Price' not in df.columns:
+        df['Log_Sale_Price'] = np.log(df['Sale_Price_GBP'])
     return df
 
 df = load_data()
 
-# --- Preview ---
-if st.checkbox("Show raw data"):
-    st.write(df.head())
-
-# --- Feature selection ---
+# --- Feature/Target split ---
 X = df.drop(['Sale_Price_GBP', 'Log_Sale_Price', 'Listing_Date'], axis=1)
-y_log = df['Log_Sale_Price']
+y = df['Log_Sale_Price']
 
-# --- Split ---
-X_train, X_test, y_train_log, y_test_log = train_test_split(X, y_log, test_size=0.2, random_state=42)
+# Train XGBoost
+xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42)
+xgb_model.fit(X, y)
 
-# --- Train XGBoost ---
-xgb = XGBRegressor(
-    n_estimators=100,
-    learning_rate=0.1,
-    max_depth=6,
-    random_state=42,
-    n_jobs=-1
-)
+# Title
+st.title("🏡 UK House Price Predictor with XGBoost")
 
-xgb.fit(X_train, y_train_log)
-y_pred_log = xgb.predict(X_test)
+st.markdown("""
+This app predicts the **sale price of a house** using an XGBoost model trained on UK housing data.  
+Fill in the property details below and click **Predict** to get an estimated price.
+""")
 
-# --- Evaluation: log scale ---
-st.subheader("📉 Evaluation on Log Scale")
+# --- Create input form dynamically from feature names ---
+st.sidebar.header("📋 Enter Property Details")
 
-rmse_log = np.sqrt(mean_squared_error(y_test_log, y_pred_log))
-r2_log = r2_score(y_test_log, y_pred_log)
+# Dynamic input UI based on X columns
+user_input = {}
+for col in X.columns:
+    if pd.api.types.is_numeric_dtype(X[col]):
+        min_val = float(X[col].min())
+        max_val = float(X[col].max())
+        mean_val = float(X[col].mean())
+        user_input[col] = st.sidebar.slider(f"{col}", min_val, max_val, mean_val)
+    else:
+        options = sorted(X[col].unique())
+        user_input[col] = st.sidebar.selectbox(f"{col}", options)
 
-st.write(f"**RMSE (log)**: {rmse_log:.4f}")
-st.write(f"**R² (log)**: {r2_log:.4f}")
+# Predict Button
+if st.sidebar.button("🔮 Predict Price"):
+    # Convert to DataFrame
+    input_df = pd.DataFrame([user_input])
+    
+    # Predict log price
+    log_pred = xgb_model.predict(input_df)[0]
+    
+    # Convert to actual price
+    predicted_price = np.exp(log_pred)
 
-# --- Convert back to price scale ---
-y_test_price = np.exp(y_test_log)
-y_pred_price = np.exp(y_pred_log)
+    # Display result
+    st.success(f"💷 **Predicted Sale Price**: £{predicted_price:,.2f}")
+    st.caption(f"(Log price: {log_pred:.2f})")
 
-# --- Evaluation: price scale ---
-st.subheader("💷 Evaluation on Actual Price Scale")
-
-rmse_price = np.sqrt(mean_squared_error(y_test_price, y_pred_price))
-r2_price = r2_score(y_test_price, y_pred_price)
-
-st.write(f"**RMSE**: £{rmse_price:,.2f}")
-st.write(f"**R²**: {r2_price:.4f}")
-
-# --- Plot actual vs predicted ---
-st.subheader("📊 Predicted vs Actual Sale Prices")
-
-fig, ax = plt.subplots(figsize=(8, 6))
-ax.scatter(y_test_price, y_pred_price, alpha=0.5, label="XGBoost Predictions")
-ax.plot([y_test_price.min(), y_test_price.max()],
-        [y_test_price.min(), y_test_price.max()], 'r--')
-ax.set_xlabel("Actual Sale Price (£)")
-ax.set_ylabel("Predicted Sale Price (£)")
-ax.set_title("Predicted vs Actual")
-ax.legend()
-st.pyplot(fig)
+    # Show input summary
+    with st.expander("Show input summary"):
+        st.write(input_df)
 
