@@ -10,14 +10,12 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import numpy as np
-import xgboost as xgb
-from xgboost import XGBRegressor
-from sklearn.model_selection import train_test_split
+import joblib  # <-- Added
 
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv("cleaned_Uk_Housing.csv")  # Make sure this file exists in your GitHub repo
+    df = pd.read_csv("cleaned_Uk_Housing.csv")
     if 'Log_Sale_Price' not in df.columns:
         df['Log_Sale_Price'] = np.log(df['Sale_Price_GBP'])
     return df
@@ -28,9 +26,8 @@ df = load_data()
 X = df.drop(['Sale_Price_GBP', 'Log_Sale_Price', 'Listing_Date'], axis=1)
 y = df['Log_Sale_Price']
 
-# Train XGBoost
-xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42)
-xgb_model.fit(X, y)
+# Load pre-trained model instead of training
+xgb_model = joblib.load("xgb_log_price_model.pkl")  # <-- Loading the saved model
 
 # Title
 st.title("🏡 UK House Price Predictor with XGBoost")
